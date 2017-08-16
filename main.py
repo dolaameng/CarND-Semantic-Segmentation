@@ -1,5 +1,6 @@
 import os.path
 import tensorflow as tf
+from tensorflow.contrib.layers import variance_scaling_initializer
 import helper
 import warnings
 from distutils.version import LooseVersion
@@ -32,8 +33,16 @@ def load_vgg(sess, vgg_path):
     vgg_layer3_out_tensor_name = 'layer3_out:0'
     vgg_layer4_out_tensor_name = 'layer4_out:0'
     vgg_layer7_out_tensor_name = 'layer7_out:0'
+
+    tf.saved_model.loader.load(sess, [vgg_tag], vgg_path)
+    graph = sess.graph
+    image_input = graph.get_tensor_by_name(vgg_input_tensor_name)
+    keep_prob = graph.get_tensor_by_name(vgg_keep_prob_tensor_name)
+    layer3_out = graph.get_tensor_by_name(vgg_layer3_out_tensor_name)
+    layer4_out = graph.get_tensor_by_name(vgg_layer4_out_tensor_name)
+    layer7_out = graph.get_tensor_by_name(vgg_layer7_out_tensor_name) 
     
-    return None, None, None, None, None
+    return image_input, keep_prob, layer3_out, layer4_out, layer7_out
 tests.test_load_vgg(load_vgg, tf)
 
 
@@ -47,7 +56,44 @@ def layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes):
     :return: The Tensor for the last layer of output
     """
     # TODO: Implement function
-    return None
+    weight_initializer = variance_scaling_initializer()
+    ## fcn layers
+    layer3_fcn = tf.layers.conv2d(vgg_layer3_out, num_classes,
+                                kernel_size=(1, 1), strides=(1, 1),
+                                kernel_initializer=weight_initializer,
+                                name="layer3_fcn", padding="SAME")
+
+    layer4_fcn = tf.layers.conv2d(vgg_layer4_out, num_classes,
+                                kernel_size=(1, 1), strides=(1, 1),
+                                kernel_initializer=weight_initializer,
+                                name="layer4_fcn", padding="SAME")
+
+    layer7_fcn = tf.layers.conv2d(vgg_layer7_out, num_classes,
+                                kernel_size=(1, 1), strides=(1, 1),
+                                kernel_initializer=weight_initializer,
+                                name="layer7_fcn", padding="SAME")
+
+    ## upsampling and skipping
+    layer7_up = tf.layers.conv2d_transpose(layer7_fcn, num_classes,
+                                        kernel_size=(4, 4), strides=(2, 2),
+                                        kernel_initializer=weight_initializer,
+                                        name="layer7_up", padding="SAME")
+
+    layer4_skip = tf.add(layer4_fcn, layer7_up, name="layer4_skip")
+
+    layer4_up = tf.layers.conv2d_transpose(layer4_skip, num_classes,
+                                        kernel_size=(4, 4), strides=(2, 2),
+                                        kernel_initializer=weight_initializer,
+                                        name="layer4_up", padding="SAME")
+
+    layer3_skip = tf.add(layer3_fcn, layer4_up, name="layer3_skip")
+
+    class_heatmap = tf.layers.conv2d_transpose(layer3_skip, num_classes,
+                                        kernel_size=(16, 16), strides=(8, 8),
+                                        kernel_initializer=weight_initializer,
+                                        name="class_heatmap", padding="SAME")
+
+    return class_heatmap
 tests.test_layers(layers)
 
 
@@ -61,7 +107,14 @@ def optimize(nn_last_layer, correct_label, learning_rate, num_classes):
     :return: Tuple of (logits, train_op, cross_entropy_loss)
     """
     # TODO: Implement function
-    return None, None, None
+    logits = tf.reshape(nn_last_layer, [-1, num_classes])
+    labels = tf.reshape(correct_label, [-1, num_classes])
+    
+    xentropy = tf.nn.softmax_cross_entropy_with_logits(labels=labels, logits=logits)
+    loss = tf.reduce_mean(xentropy)
+    
+    train_op = tf.train.AdamOptimizer(learning_rate).minimize(loss)
+    return logits, train_op, loss
 tests.test_optimize(optimize)
 
 
@@ -81,13 +134,25 @@ def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_l
     :param learning_rate: TF Placeholder for learning rate
     """
     # TODO: Implement function
-    pass
+    for epoch in range(epochs):
+        batches = get_batches_fn(batch_size)
+        for b, (images, gt_images) in enumerate(batches):
+            _, loss_val = sess.run([train_op, cross_entropy_loss],
+                                    feed_dict={
+                                        input_image: images,
+                                        correct_label: gt_images,
+                                        keep_prob: 0.5,
+                                        learning_rate: 5e-4 })
+            if b % 10 == 0:
+                print("epoch %i batch %i loss=%.3f" % (epoch, b, loss_val))
 tests.test_train_nn(train_nn)
 
 
 def run():
     num_classes = 2
     image_shape = (160, 576)
+    n_epochs = 80 
+    batch_size = 16
     data_dir = './data'
     runs_dir = './runs'
     tests.test_for_kitti_dataset(data_dir)
@@ -109,11 +174,24 @@ def run():
         #  https://datascience.stackexchange.com/questions/5224/how-to-prepare-augment-images-for-neural-network
 
         # TODO: Build NN using load_vgg, layers, and optimize function
+        input_image, keep_prob, layer3_out, layer4_out, layer7_out = load_vgg(sess, vgg_path)
 
         # TODO: Train NN using the train_nn function
+        model_output = layers(layer3_out, layer4_out, layer7_out, num_classes)
+
+        target = tf.placeholder(dtype=tf.float32, shape=[None, None, None, num_classes])
+
+        learning_rate = tf.placeholder(dtype=tf.float32)
+        
+        logits, train_op, loss = optimize(model_output, target, learning_rate, num_classes)
+
+        sess.run(tf.global_variables_initializer())
+        
+        train_nn(sess, n_epochs, batch_size, get_batches_fn, train_op, loss, input_image,
+                target, keep_prob, learning_rate)
 
         # TODO: Save inference data using helper.save_inference_samples
-        #  helper.save_inference_samples(runs_dir, data_dir, sess, image_shape, logits, keep_prob, input_image)
+        helper.save_inference_samples(runs_dir, data_dir, sess, image_shape, logits, keep_prob, input_image)
 
         # OPTIONAL: Apply the trained model to a video
 
