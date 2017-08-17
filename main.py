@@ -5,6 +5,7 @@ import helper
 import warnings
 from distutils.version import LooseVersion
 import project_tests as tests
+import numpy as np
 
 
 # Check TensorFlow Version
@@ -25,7 +26,6 @@ def load_vgg(sess, vgg_path):
     :param vgg_path: Path to vgg folder, containing "variables/" and "saved_model.pb"
     :return: Tuple of Tensors from VGG model (image_input, keep_prob, layer3_out, layer4_out, layer7_out)
     """
-    # TODO: Implement function
     #   Use tf.saved_model.loader.load to load the model and weights
     vgg_tag = 'vgg16'
     vgg_input_tensor_name = 'image_input:0'
@@ -55,7 +55,6 @@ def layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes):
     :param num_classes: Number of classes to classify
     :return: The Tensor for the last layer of output
     """
-    # TODO: Implement function
     weight_initializer = variance_scaling_initializer()
     ## fcn layers
     layer3_fcn = tf.layers.conv2d(vgg_layer3_out, num_classes,
@@ -106,7 +105,6 @@ def optimize(nn_last_layer, correct_label, learning_rate, num_classes):
     :param num_classes: Number of classes to classify
     :return: Tuple of (logits, train_op, cross_entropy_loss)
     """
-    # TODO: Implement function
     logits = tf.reshape(nn_last_layer, [-1, num_classes])
     labels = tf.reshape(correct_label, [-1, num_classes])
     
@@ -116,6 +114,19 @@ def optimize(nn_last_layer, correct_label, learning_rate, num_classes):
     train_op = tf.train.AdamOptimizer(learning_rate).minimize(loss)
     return logits, train_op, loss
 tests.test_optimize(optimize)
+
+
+def augment_data(images, gt_images):
+    """Augument data by some image transformation,
+    return pair of image patches..
+    Only support horizontal flipping for now
+    """
+    # flipping horizontally
+    hf_images = images[:, :, ::-1, :]
+    hf_gt_images = gt_images[:, :, ::-1, :]
+    aug_images = np.concatenate([images, hf_images], axis=0)
+    aug_gt_images = np.concatenate([gt_images, hf_gt_images], axis=0)
+    return aug_images, aug_gt_images
 
 
 def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_loss, input_image,
@@ -133,16 +144,21 @@ def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_l
     :param keep_prob: TF Placeholder for dropout keep probability
     :param learning_rate: TF Placeholder for learning rate
     """
-    # TODO: Implement function
+
     for epoch in range(epochs):
         batches = get_batches_fn(batch_size)
-        for b, (images, gt_images) in enumerate(batches):
+        for b, (seed_images, seed_gt_images) in enumerate(batches):
+            ## for the intrusive test `tests.test_train_nn`
+            if seed_images.ndim == 4:
+                images, gt_images = augment_data(seed_images, seed_gt_images)
+            else:
+                images, gt_images = seed_images, seed_gt_images
             _, loss_val = sess.run([train_op, cross_entropy_loss],
                                     feed_dict={
                                         input_image: images,
                                         correct_label: gt_images,
                                         keep_prob: 0.5,
-                                        learning_rate: 5e-4 })
+                                        learning_rate: 1e-4 })
             if b % 10 == 0:
                 print("epoch %i batch %i loss=%.3f" % (epoch, b, loss_val))
 tests.test_train_nn(train_nn)
@@ -150,9 +166,9 @@ tests.test_train_nn(train_nn)
 
 def run():
     num_classes = 2
-    image_shape = (160, 576)
-    n_epochs = 80 
-    batch_size = 16
+    image_shape = (160, 576) #(32, 128)
+    n_epochs = 100
+    batch_size = 8
     data_dir = './data'
     runs_dir = './runs'
     tests.test_for_kitti_dataset(data_dir)
@@ -172,6 +188,7 @@ def run():
 
         # OPTIONAL: Augment Images for better results
         #  https://datascience.stackexchange.com/questions/5224/how-to-prepare-augment-images-for-neural-network
+        # see the implementation of `train_nn`
 
         # TODO: Build NN using load_vgg, layers, and optimize function
         input_image, keep_prob, layer3_out, layer4_out, layer7_out = load_vgg(sess, vgg_path)
