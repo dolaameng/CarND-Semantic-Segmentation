@@ -60,21 +60,17 @@ def layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes):
     layer3_fcn = tf.layers.conv2d(vgg_layer3_out, num_classes,
                                 kernel_size=(1, 1), strides=(1, 1),
                                 kernel_initializer=weight_initializer,
-                                name="layer3_fcn", padding="SAME",
-                                activation=tf.nn.relu)
+                                name="layer3_fcn", padding="SAME")
 
     layer4_fcn = tf.layers.conv2d(vgg_layer4_out, num_classes,
                                 kernel_size=(1, 1), strides=(1, 1),
                                 kernel_initializer=weight_initializer,
-                                name="layer4_fcn", padding="SAME",
-                                activation=tf.nn.relu)
+                                name="layer4_fcn", padding="SAME")
 
     layer7_fcn = tf.layers.conv2d(vgg_layer7_out, num_classes,
                                 kernel_size=(1, 1), strides=(1, 1),
                                 kernel_initializer=weight_initializer,
-                                name="layer7_fcn", padding="SAME",
-                                activation=tf.nn.relu)
-
+                                name="layer7_fcn", padding="SAME")
     ## upsampling and skipping
     layer7_up = tf.layers.conv2d_transpose(layer7_fcn, num_classes,
                                         kernel_size=(4, 4), strides=(2, 2),
@@ -161,7 +157,7 @@ def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_l
                                         input_image: images,
                                         correct_label: gt_images,
                                         keep_prob: 0.5,
-                                        learning_rate: 1e-4 })
+                                        learning_rate: 3e-4 })
             if b % 10 == 0:
                 print("epoch %i batch %i loss=%.3f" % (epoch, b, loss_val))
 
@@ -210,6 +206,10 @@ def run():
         
         train_nn(sess, n_epochs, batch_size, get_batches_fn, train_op, loss, input_image,
                 target, keep_prob, learning_rate)
+        saver = tf.train.Saver()
+        saver.save(sess, "./models/model.ckpt")
+        saver.export_meta_graph("./models/model.meta")
+        tf.train.write_graph(sess.graph_def, "./models/", "model.pb", False)
 
         # TODO: Save inference data using helper.save_inference_samples
         helper.save_inference_samples(runs_dir, data_dir, sess, image_shape, logits, keep_prob, input_image)
