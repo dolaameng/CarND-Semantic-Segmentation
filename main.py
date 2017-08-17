@@ -61,42 +61,39 @@ def layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes):
                                 kernel_size=(1, 1), strides=(1, 1),
                                 kernel_initializer=weight_initializer,
                                 name="layer3_fcn", padding="SAME",
-                                activation=tf.nn.relu)
+                                activation=tf.nn.relu, use_bias=False)
 
     layer4_fcn = tf.layers.conv2d(vgg_layer4_out, num_classes,
                                 kernel_size=(1, 1), strides=(1, 1),
                                 kernel_initializer=weight_initializer,
                                 name="layer4_fcn", padding="SAME",
-                                activation=tf.nn.relu)
+                                activation=tf.nn.relu, use_bias=False)
 
     layer7_fcn = tf.layers.conv2d(vgg_layer7_out, num_classes,
                                 kernel_size=(1, 1), strides=(1, 1),
                                 kernel_initializer=weight_initializer,
                                 name="layer7_fcn", padding="SAME",
-                                activation=tf.nn.relu)
+                                activation=tf.nn.relu, use_bias=False)
 
     ## upsampling and skipping
     layer7_up = tf.layers.conv2d_transpose(layer7_fcn, num_classes,
                                         kernel_size=(4, 4), strides=(2, 2),
                                         kernel_initializer=weight_initializer,
-                                        name="layer7_up", padding="SAME",
-                                        activation=tf.nn.relu)
+                                        name="layer7_up", padding="SAME", use_bias=False)
 
     layer4_skip = tf.add(layer4_fcn, layer7_up, name="layer4_skip")
 
     layer4_up = tf.layers.conv2d_transpose(layer4_skip, num_classes,
                                         kernel_size=(4, 4), strides=(2, 2),
                                         kernel_initializer=weight_initializer,
-                                        name="layer4_up", padding="SAME",
-                                        activation=tf.nn.relu)
+                                        name="layer4_up", padding="SAME", use_bias=False)
 
     layer3_skip = tf.add(layer3_fcn, layer4_up, name="layer3_skip")
 
     class_heatmap = tf.layers.conv2d_transpose(layer3_skip, num_classes,
                                         kernel_size=(16, 16), strides=(8, 8),
                                         kernel_initializer=weight_initializer,
-                                        name="class_heatmap", padding="SAME",
-                                        activation=tf.nn.relu)
+                                        name="class_heatmap", padding="SAME", use_bias=False)
 
     return class_heatmap
 tests.test_layers(layers)
@@ -168,11 +165,6 @@ def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_l
             if b % 10 == 0:
                 print("epoch %i batch %i loss=%.3f" % (epoch, b, loss_val))
 
-    ## save model
-    saver = tf.train.Saver()
-    saver.save(sess,'./models/model.ckpt')
-    saver.export_meta_graph('./models/model.meta')
-    tf.train.write_graph(sess.graph_def, "./models", "model.pb", False)
 tests.test_train_nn(train_nn)
 
 
