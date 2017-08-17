@@ -55,40 +55,46 @@ def layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes):
     :param num_classes: Number of classes to classify
     :return: The Tensor for the last layer of output
     """
-    weight_initializer = variance_scaling_initializer()
+
+    ## Suprisingly linear mapping performs better than using RELU, is it
+    ## because 
+    ## 1. the depth here is small (num_classes)
+    ## 2. pretrained VGG16 should be good enough to capture semantics, so 
+    ## linear mappings and upsampling with do the job
+
     ## fcn layers
     layer3_fcn = tf.layers.conv2d(vgg_layer3_out, num_classes,
                                 kernel_size=(1, 1), strides=(1, 1),
-                                kernel_initializer=weight_initializer,
+                                kernel_initializer=variance_scaling_initializer(),
                                 name="layer3_fcn", padding="SAME")
 
     layer4_fcn = tf.layers.conv2d(vgg_layer4_out, num_classes,
                                 kernel_size=(1, 1), strides=(1, 1),
-                                kernel_initializer=weight_initializer,
+                                kernel_initializer=variance_scaling_initializer(),
                                 name="layer4_fcn", padding="SAME")
 
     layer7_fcn = tf.layers.conv2d(vgg_layer7_out, num_classes,
                                 kernel_size=(1, 1), strides=(1, 1),
-                                kernel_initializer=weight_initializer,
+                                kernel_initializer=variance_scaling_initializer(),
                                 name="layer7_fcn", padding="SAME")
     ## upsampling and skipping
     layer7_up = tf.layers.conv2d_transpose(layer7_fcn, num_classes,
                                         kernel_size=(4, 4), strides=(2, 2),
-                                        kernel_initializer=weight_initializer,
+                                        kernel_initializer=variance_scaling_initializer(),
                                         name="layer7_up", padding="SAME")
 
     layer4_skip = tf.add(layer4_fcn, layer7_up, name="layer4_skip")
 
     layer4_up = tf.layers.conv2d_transpose(layer4_skip, num_classes,
                                         kernel_size=(4, 4), strides=(2, 2),
-                                        kernel_initializer=weight_initializer,
+                                        kernel_initializer=variance_scaling_initializer(),
                                         name="layer4_up", padding="SAME")
 
     layer3_skip = tf.add(layer3_fcn, layer4_up, name="layer3_skip")
 
     class_heatmap = tf.layers.conv2d_transpose(layer3_skip, num_classes,
                                         kernel_size=(16, 16), strides=(8, 8),
-                                        kernel_initializer=weight_initializer,
+                                        kernel_initializer=variance_scaling_initializer(),
                                         name="class_heatmap", padding="SAME")
 
     return class_heatmap
@@ -123,8 +129,15 @@ def augment_data(images, gt_images):
     # flipping horizontally
     hf_images = images[:, :, ::-1, :]
     hf_gt_images = gt_images[:, :, ::-1, :]
-    aug_images = np.concatenate([images, hf_images], axis=0)
-    aug_gt_images = np.concatenate([gt_images, hf_gt_images], axis=0)
+
+    # flipping vertically - it looks a little weird, but the intention
+    # is to force the model focus on patterns such as texture, than shapes 
+    # or orientations 
+    vf_images = images[:, ::-1, :, :]
+    vf_gt_images = gt_images[:, ::-1, :, :]
+
+    aug_images = np.concatenate([vf_images, images, hf_images], axis=0)
+    aug_gt_images = np.concatenate([vf_gt_images, gt_images, hf_gt_images], axis=0)
     return aug_images, aug_gt_images
 
 
@@ -147,17 +160,19 @@ def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_l
     for epoch in range(epochs):
         batches = get_batches_fn(batch_size)
         for b, (seed_images, seed_gt_images) in enumerate(batches):
+            
             ## for the intrusive test `tests.test_train_nn`
             if seed_images.ndim == 4:
                 images, gt_images = augment_data(seed_images, seed_gt_images)
-            else:
+            else: # for `tests.test_train_nn(train_nn)`
                 images, gt_images = seed_images, seed_gt_images
+
             _, loss_val = sess.run([train_op, cross_entropy_loss],
                                     feed_dict={
                                         input_image: images,
                                         correct_label: gt_images,
                                         keep_prob: 0.5,
-                                        learning_rate: 3e-4 })
+                                        learning_rate: 1e-4 })
             if b % 10 == 0:
                 print("epoch %i batch %i loss=%.3f" % (epoch, b, loss_val))
 
@@ -168,7 +183,7 @@ def run():
     num_classes = 2
     image_shape = (160, 576) #(32, 128)
     n_epochs = 100
-    batch_size = 8
+    batch_size = 4
     data_dir = './data'
     runs_dir = './runs'
     tests.test_for_kitti_dataset(data_dir)
@@ -190,10 +205,10 @@ def run():
         #  https://datascience.stackexchange.com/questions/5224/how-to-prepare-augment-images-for-neural-network
         # see the implementation of `train_nn`
 
-        # TODO: Build NN using load_vgg, layers, and optimize function
+        # Build NN using load_vgg, layers, and optimize function
         input_image, keep_prob, layer3_out, layer4_out, layer7_out = load_vgg(sess, vgg_path)
 
-        # TODO: Train NN using the train_nn function
+        # Train NN using the train_nn function
         model_output = layers(layer3_out, layer4_out, layer7_out, num_classes)
 
         target = tf.placeholder(dtype=tf.float32, shape=[None, None, None, num_classes])
@@ -206,12 +221,13 @@ def run():
         
         train_nn(sess, n_epochs, batch_size, get_batches_fn, train_op, loss, input_image,
                 target, keep_prob, learning_rate)
+
         saver = tf.train.Saver()
         saver.save(sess, "./models/model.ckpt")
         saver.export_meta_graph("./models/model.meta")
         tf.train.write_graph(sess.graph_def, "./models/", "model.pb", False)
 
-        # TODO: Save inference data using helper.save_inference_samples
+        # Save inference data using helper.save_inference_samples
         helper.save_inference_samples(runs_dir, data_dir, sess, image_shape, logits, keep_prob, input_image)
 
         # OPTIONAL: Apply the trained model to a video
