@@ -33,4 +33,4 @@ python main.py
  - Newest inference images from `runs` folder
 
  ### Results
-![result](https://github.com/dolaameng/CarND-Semantic-Segmentation/runs/animate1.gif)
+![result](https://github.com/dolaameng/CarND-Semantic-Segmentation/blob/master/runs/animate1.gif)
