@@ -54,6 +54,7 @@ def layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes):
     :param vgg_layer3_out: TF Tensor for VGG Layer 7 output
     :param num_classes: Number of classes to classify
     :return: The Tensor for the last layer of output
+    Implementation based on https://people.eecs.berkeley.edu/~jonlong/long_shelhamer_fcn.pdf
     """
 
     ## Suprisingly linear mapping performs better than using RELU, is it
@@ -133,6 +134,7 @@ def augment_data(images, gt_images):
     # flipping vertically - it looks a little weird, but the intention
     # is to force the model focus on patterns such as texture, than shapes 
     # or orientations 
+    ## Experiments show that it doesn't really help too much
     vf_images = images[:, ::-1, :, :]
     vf_gt_images = gt_images[:, ::-1, :, :]
 

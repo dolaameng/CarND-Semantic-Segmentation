@@ -103,6 +103,5 @@ ENV/
 RUNS/
 
 /data
-/runs
 *.tgz
 /models
